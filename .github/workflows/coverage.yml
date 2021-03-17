@@ -23,7 +23,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'sass'
+    if: github.repository_owner == 'umonaca'
 
     steps:
       - uses: actions/checkout@v2

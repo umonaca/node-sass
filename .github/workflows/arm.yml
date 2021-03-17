@@ -1,0 +1,91 @@
+name: Build bindings for ARM releases
+
+on:
+  push:
+    branches-ignore:
+      - "dependabot/**"
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            distro: ubuntu18.04
+            gcc: "gcc-6"
+            gpp: "g++-6"
+            # used by node-sass, they are using process.arch
+            node_archname: arm64
+            node_module_version: 83
+            # used by docker buildx
+            platform: linux/arm64
+
+          - arch: armv7
+            distro: ubuntu18.04
+            gcc: "gcc-6"
+            gpp: "g++-6"
+            # used by node-sass, they are using process.arch
+            node_archname: arm
+            node_module_version: 83
+            # used by docker buildx
+            platform: linux/arm/v7
+
+    steps:
+      - name: Login to DockerHub
+        uses: docker/login-action@v1 
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+  
+      - name: Set up QEMU for cross platform builds
+        id: qemu
+        uses: docker/setup-qemu-action@v1
+
+      - name: Available platforms
+        run: echo ${{ steps.qemu.outputs.platforms }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+  
+      - name: Build release for multiple platforms
+        uses: docker/build-push-action@v2
+        with:
+          platforms: ${{ matrix.platform }}
+          push: false
+          tags: muveex/node-sass:linux-${{ matrix.node_archname }}-${{ matrix.node_module_version }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new
+          outputs: type=local,dest=image
+
+      - name: Extract artifacts
+        run: |
+          cp -r image/source/vendor/. artifacts/
+        env:
+          ARCH_NAME: ${{ matrix.node_archname }}
+          NODE_MODULE_VERSION: ${{ matrix.node_module_version }}
+
+      - name: 'Upload artifacts'
+        uses: actions/upload-artifact@v2
+        with:
+          name: linux-${{ matrix.node_archname }}-${{ matrix.node_module_version }}_binding
+          path: artifacts/
+
+      # Temp fix according to official document at
+      # https://github.com/docker/build-push-action/blob/master/docs/advanced/cache.md#registry-cache
+      # They are working to refactor with GitHub cache backend
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
